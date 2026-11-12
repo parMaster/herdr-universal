@@ -1,0 +1,48 @@
+name: Check upstream release
+
+on:
+  schedule:
+    - cron: "37 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Resolve upstream latest tag
+        id: latest
+        run: |
+          set -euo pipefail
+          # herdr-app ships through releases.herdr.dev, not GitHub releases, so tags are the signal.
+          # Release tags only, same rule as build-universal.sh and build-universal.yml.
+          tag="$(git ls-remote --tags --refs https://github.com/herdrdev/herdr-app.git \
+            | sed 's|.*refs/tags/||' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)"
+          [ -n "$tag" ] || { echo "::error::no vX.Y.Z tags upstream" >&2; exit 1; }
+          echo "upstream latest: $tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if gh release view "${tag}-universal" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "${tag}-universal already released here, nothing to do"
+            echo "built=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "built=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Dispatch universal build
+        if: steps.latest.outputs.built == 'false'
+        run: |
+          set -euo pipefail
+          title="Universal build failed for upstream ${{ steps.latest.outputs.tag }}"
+          if [ -n "$(gh issue list --repo "${{ github.repository }}" --state open --search "\"$title\" in:title" --json number --jq '.[].number')" ]; then
+            echo "open issue \"$title\" — not retrying until it's closed"
+            exit 0
+          fi
+          gh workflow run build-universal.yml --repo "${{ github.repository }}" \
+            -f herdr_ref="${{ steps.latest.outputs.tag }}" -f report_failure=true
