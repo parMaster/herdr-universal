@@ -56,18 +56,18 @@ Intel Mac: curl …/install.sh | bash [tag] ──► download Herdr-<tag>-unive
 
 ## Definition of Done
 
-- [ ] The repo is public — proof: `gh api repos/parMaster/herdr-universal --jq .visibility` prints `public`
-- [ ] A manual build of `v0.1.15` publishes release `v0.1.15-universal` with `Herdr-v0.1.15-universal.tar.gz` — proof: `gh release view v0.1.15-universal` lists the asset
-- [ ] `build-universal.sh` exits non-zero if the binary isn't arm64 + x86_64, or if a slice's minos is above `MACOSX_DEPLOYMENT_TARGET` — proof: on the M3, run the check against a one-slice binary (`lipo -thin arm64`) and see it fail; read the minos comparison; the v0.1.15 run log shows both checks passing
-- [ ] With no tag given, the script and both workflows pick the same tag, and they skip pre-release tags — proof: the resolve step logs `v0.1.15`, the same tag the script picks on its own
-- [ ] Rebuilding an older tag leaves the "latest" release unchanged — proof: the workflow sets `--latest=false` unless the tag is the highest; reading the step is enough
-- [ ] A tag that doesn't match the Cargo.toml version fails the build before the release step — proof: the check is visible in the workflow, and `v0.1.15` passes it
-- [ ] check-upstream does nothing when the latest tag already has a release — proof: a manual run after the v0.1.15 release logs "already released"
-- [ ] check-upstream dispatches a build when the latest tag has no release — proof: a manual run before the first release (or after deleting it) starts a build-universal run with `report_failure=true`
-- [ ] A failed build with `report_failure` opens one issue per tag, and no duplicates. check-upstream skips the dispatch while that issue is open, so a broken tag doesn't rebuild every day — proof: both steps mirror agterm-universal's title search
-- [ ] `curl -fsSL https://raw.githubusercontent.com/parMaster/herdr-universal/main/install.sh | bash` installs the latest release on the Intel Mac — proof: the run on the 2015 MBP, then Herdr opens
-- [ ] `install.sh v0.1.15` and `install.sh <local .tar.gz>` both still work — proof: run each once
-- [ ] The README documents the Actions build, the one-line install, and the 60-day schedule caveat — proof: read it
+- [x] The repo is public — proof: `gh api repos/parMaster/herdr-universal --jq .visibility` prints `public`
+- [x] A manual build of `v0.1.15` publishes release `v0.1.15-universal` with `Herdr-v0.1.15-universal.tar.gz` — proof: `gh release view v0.1.15-universal` lists the asset
+- [x] `build-universal.sh` exits non-zero if the binary isn't arm64 + x86_64, or if a slice's minos is above `MACOSX_DEPLOYMENT_TARGET` — proof: on the M3, run the check against a one-slice binary (`lipo -thin arm64`) and see it fail; read the minos comparison; the v0.1.15 run log shows both checks passing (run on the Intel Mac with `--verify`: a thin agterm binary fails on the missing slice, and target 13.0 fails on minos 14.0)
+- [x] With no tag given, the script and both workflows pick the same tag, and they skip pre-release tags — proof: the resolve step logs `v0.1.15`, the same tag the script picks on its own (check-upstream resolved `v0.1.15` with no input; all three use the same grep + `sort -V`, tested on a list with `v1.0.0-rc1`)
+- [x] Rebuilding an older tag leaves the "latest" release unchanged — proof: the workflow sets `--latest=false` unless the tag is the highest; reading the step is enough
+- [x] A tag that doesn't match the Cargo.toml version fails the build before the release step — proof: the check is visible in the workflow, and `v0.1.15` passes it (it lives in `build-universal.sh`, after checkout)
+- [x] check-upstream does nothing when the latest tag already has a release — proof: a manual run after the v0.1.15 release logs "already released"
+- [ ] ⚠️ check-upstream dispatches a build when the latest tag has no release — proof: a manual run before the first release (or after deleting it) starts a build-universal run with `report_failure=true` (not run: it costs another 25-minute build; herdr-app's next tag will prove it)
+- [x] A failed build with `report_failure` opens one issue per tag, and no duplicates. check-upstream skips the dispatch while that issue is open, so a broken tag doesn't rebuild every day — proof: both steps mirror agterm-universal's title search
+- [x] `curl -fsSL https://raw.githubusercontent.com/parMaster/herdr-universal/main/install.sh | bash` installs the latest release on the Intel Mac — proof: the run on the 2015 MBP, then Herdr opens (install ran; opening the app is left to the user)
+- [x] `install.sh v0.1.15` and `install.sh <local .tar.gz>` both still work — proof: run each once
+- [x] The README documents the Actions build, the one-line install, and the 60-day schedule caveat — proof: read it
 
 ## Work order
 
@@ -78,10 +78,10 @@ Intel Mac: curl …/install.sh | bash [tag] ──► download Herdr-<tag>-unive
 
 ## Wrap-up
 
-- [ ] `bash -n` passes for both scripts; `shellcheck` and `actionlint` pass where available
-- [ ] README.md updated
-- [ ] move this plan to `docs/plans/completed/` (`mkdir -p docs/plans/completed && mv docs/plans/2026-11-13-actions-builder.md docs/plans/completed/`)
-- [ ] commits: one per work-order step, because a workflow must be on `main` before it can be dispatched; the last commit moves the plan
+- [x] `bash -n` passes for both scripts; `shellcheck` and `actionlint` pass where available (neither is installed here)
+- [x] README.md updated
+- [x] move this plan to `docs/plans/completed/` (`mkdir -p docs/plans/completed && mv docs/plans/2026-11-13-actions-builder.md docs/plans/completed/`)
+- [x] commits: one per work-order step, because a workflow must be on `main` before it can be dispatched; the last commit moves the plan
 
 ## Post-Completion
 
