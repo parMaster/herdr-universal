@@ -1,20 +1,46 @@
 #!/bin/bash
-# Install a Herdr.app built by build-universal.sh, on any Mac.
+# Install (or update to) a universal Herdr.app, on any Mac.
 #
-#   ./install.sh dist/Herdr-0.1.15-universal.tar.gz
+#   install.sh                       -> latest release of this repo
+#   install.sh v0.1.15               -> that release (v0.1.15 or v0.1.15-universal)
+#   install.sh path/to/archive.tar.gz -> a local build from build-universal.sh
 #
-# Does what upstream's scripts/install-macos does after its build step.
+# Works piped: curl -fsSL https://raw.githubusercontent.com/parMaster/herdr-universal/main/install.sh | bash
+# Installs the same way upstream's scripts/install-macos does after its build step.
 set -euo pipefail
 
-archive=${1:?usage: install.sh Herdr-<version>-universal.tar.gz}
-[[ -f $archive ]] || { echo "install: $archive not found" >&2; exit 1; }
+repo=parMaster/herdr-universal
+die() { echo "install: $*" >&2; exit 1; }
 
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
+
+arg=${1:-}
+if [[ -n $arg && -f $arg ]]; then
+  archive=$arg
+else
+  tag=$arg
+  if [[ -z $tag ]]; then
+    # The redirect target carries the tag; the REST API would rate-limit anonymous callers.
+    latest_url=$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/$repo/releases/latest") \
+      || die "could not look up the latest release of $repo"
+    tag=${latest_url##*/}
+    [[ $tag == *-universal ]] || die "could not read a release tag from $latest_url"
+  fi
+  tag=${tag%-universal}
+  url="https://github.com/$repo/releases/download/$tag-universal/Herdr-$tag-universal.tar.gz"
+  echo "downloading $url"
+  archive=$work/Herdr.tar.gz
+  curl -fsSL -o "$archive" "$url" || die "no release $tag-universal in $repo (tried $url)"
+fi
+
 tar -xzf "$archive" -C "$work"
-xattr -dr com.apple.quarantine "$work/Herdr.app" 2>/dev/null || true
+[[ -d $work/Herdr.app ]] || die "$archive has no Herdr.app in it"
+# Ad hoc signed, not notarized: Gatekeeper blocks it while a quarantine flag is set.
+xattr -cr "$work/Herdr.app"
+# Checked before anything installed is touched, so a bad download leaves the working app alone.
 lipo "$work/Herdr.app/Contents/MacOS/Herdr" -verify_arch "$(uname -m)" \
-  || { echo "install: this build has no $(uname -m) slice" >&2; exit 1; }
+  || die "this build has no $(uname -m) slice"
 
 app="$HOME/Applications/Herdr.app"
 mkdir -p "$HOME/Applications" "$HOME/.local/bin"
@@ -28,7 +54,8 @@ rm -rf "$app"
 mv "$app.new" "$app"
 ln -sfn "$app/Contents/MacOS/Herdr" "$HOME/.local/bin/herdr-app"
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$app"
-echo "Installed $app ($(defaults read "$app/Contents/Info" CFBundleShortVersionString))."
+echo "Installed $app ($(defaults read "$app/Contents/Info" CFBundleShortVersionString), $(lipo -archs "$app/Contents/MacOS/Herdr"))."
+echo "A running Herdr keeps the old version until you quit and reopen it."
 
 if ! command -v hc >/dev/null && [[ ! -x $HOME/.local/bin/hc ]]; then
   echo
