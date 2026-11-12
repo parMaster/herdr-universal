@@ -1,0 +1,79 @@
+name: Build universal Herdr
+
+on:
+  workflow_dispatch:
+    inputs:
+      herdr_ref:
+        description: herdrdev/herdr-app tag to build (vX.Y.Z). Empty means the highest release tag.
+        required: false
+        default: ""
+      report_failure:
+        description: Open an issue if the build fails (set by check-upstream.yml).
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - name: Checkout this repo
+        uses: actions/checkout@v7
+
+      - name: Resolve target tag
+        id: resolve
+        run: |
+          set -euo pipefail
+          tags="$(git ls-remote --tags --refs https://github.com/herdrdev/herdr-app.git | sed 's|.*refs/tags/||')"
+          # Release tags only, same rule as build-universal.sh and check-upstream.yml.
+          highest="$(grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' <<<"$tags" | sort -V | tail -1)"
+          tag="${{ inputs.herdr_ref }}"
+          tag="${tag:-$highest}"
+          [[ $tag =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::$tag is not a vX.Y.Z tag" >&2; exit 1; }
+          grep -qx "$tag" <<<"$tags" || { echo "::error::herdr-app has no tag $tag" >&2; exit 1; }
+          # A rebuild of an older tag must not take over "latest", or install.sh would downgrade.
+          latest=false
+          [[ $tag == "$highest" ]] && latest=true
+          echo "upstream tag: $tag (highest: $highest, mark latest: $latest)"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
+
+      - name: Build universal Herdr.app
+        id: build
+        run: ./build-universal.sh "${{ steps.resolve.outputs.tag }}"
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          src="${{ steps.build.outputs.archive }}"
+          asset="dist/Herdr-${{ steps.resolve.outputs.tag }}-universal.tar.gz"
+          [[ $src == "$PWD/$asset" ]] || { echo "::error::build wrote $src, expected $asset" >&2; exit 1; }
+          tag="${{ steps.resolve.outputs.tag }}-universal"
+          gh release delete "$tag" --repo "${{ github.repository }}" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$tag" "$asset" \
+            --repo "${{ github.repository }}" \
+            --latest="${{ steps.resolve.outputs.latest }}" \
+            --title "Herdr ${{ steps.resolve.outputs.tag }} (universal arm64+x86_64)" \
+            --notes "Unofficial universal (arm64+x86_64) build of herdrdev/herdr-app ${{ steps.resolve.outputs.tag }}, built from unmodified upstream source by build-universal.sh. Ad hoc signed, not notarized. Self-update and telemetry are off. Install with install.sh from this repo; the app also needs herdr-core (hc)."
+
+      - name: Open issue for build failure
+        if: failure() && inputs.report_failure
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="${{ steps.resolve.outputs.tag }}"
+          title="Universal build failed for upstream $tag"
+          if [ -n "$(gh issue list --repo "${{ github.repository }}" --state open --search "\"$title\" in:title" --json number --jq '.[].number')" ]; then
+            echo "issue already open: $title"
+            exit 0
+          fi
+          gh issue create --repo "${{ github.repository }}" --title "$title" --body \
+            "Scheduled universal build of herdrdev/herdr-app \`$tag\` failed. See the failing step in the run log: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
